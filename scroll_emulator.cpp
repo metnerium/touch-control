@@ -289,6 +289,8 @@ void ScrollEmulator::handleUinputCommand(int uinput_fd, char command, int steps)
 }
 
 void ScrollEmulator::handleX11Fallback(char command, int steps) {
+    (void)command; // Подавляем предупреждение о неиспользованном параметре
+    
     // Fallback через X11 команды (как xdotool)
     if (!getenv("DISPLAY")) return;
 

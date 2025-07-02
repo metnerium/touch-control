@@ -1,24 +1,48 @@
 CXX = g++
 CXXFLAGS = -std=c++11 -Wall -Wextra -O2 -fPIC
 
+# Зависимости системы
+LIBINPUT_CFLAGS = $(shell pkg-config --cflags libinput 2>/dev/null)
+LIBINPUT_LIBS = $(shell pkg-config --libs libinput 2>/dev/null)
+LIBUDEV_CFLAGS = $(shell pkg-config --cflags libudev 2>/dev/null)
+LIBUDEV_LIBS = $(shell pkg-config --libs libudev 2>/dev/null)
+
 # Файлы проекта
 HEADER = scroll_emulator.h
+GESTURE_HEADER = gesture_scroll_handler.h
 LIB_SOURCE = scroll_emulator.cpp
+GESTURE_SOURCE = gesture_scroll_handler.cpp
 TOOL_SOURCE = scroll_tool.cpp
+DAEMON_SOURCE = gesture_scroll_daemon.cpp
 
 # Цели сборки
 LIB_TARGET = libscrollemulator.so
 STATIC_LIB = libscrollemulator.a
 TOOL_TARGET = scroll-tool
+DAEMON_TARGET = gesture-scroll
 OBJECT = scroll_emulator.o
+GESTURE_OBJECT = gesture_scroll_handler.o
 
 # Основные цели
-all: $(TOOL_TARGET) $(LIB_TARGET)
+all: $(TOOL_TARGET) $(LIB_TARGET) $(DAEMON_TARGET)
 
 # Консольное приложение
 $(TOOL_TARGET): $(TOOL_SOURCE) $(OBJECT)
 	$(CXX) $(CXXFLAGS) -o $(TOOL_TARGET) $(TOOL_SOURCE) $(OBJECT)
 	@echo "✓ Консольное приложение готово: ./$(TOOL_TARGET)"
+
+# Gesture Scroll Daemon
+$(DAEMON_TARGET): $(DAEMON_SOURCE) $(OBJECT) $(GESTURE_OBJECT)
+	@if [ -z "$(LIBINPUT_LIBS)" ]; then \
+		echo "Ошибка: libinput не найден. Установите: sudo apt install libinput-dev"; \
+		exit 1; \
+	fi
+	@if [ -z "$(LIBUDEV_LIBS)" ]; then \
+		echo "Ошибка: libudev не найден. Установите: sudo apt install libudev-dev"; \
+		exit 1; \
+	fi
+	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -o $(DAEMON_TARGET) $(DAEMON_SOURCE) $(OBJECT) $(GESTURE_OBJECT) $(LIBINPUT_LIBS) $(LIBUDEV_LIBS)
+	@echo "✓ Gesture Scroll Daemon готов: ./$(DAEMON_TARGET)"
 
 # Разделяемая библиотека
 $(LIB_TARGET): $(OBJECT)
@@ -30,36 +54,53 @@ $(STATIC_LIB): $(OBJECT)
 	ar rcs $(STATIC_LIB) $(OBJECT)
 	@echo "✓ Статическая библиотека готова: $(STATIC_LIB)"
 
-# Объектный файл
+# Объектные файлы
 $(OBJECT): $(LIB_SOURCE) $(HEADER)
 	$(CXX) $(CXXFLAGS) -c $(LIB_SOURCE) -o $(OBJECT)
 
+$(GESTURE_OBJECT): $(GESTURE_SOURCE) $(GESTURE_HEADER) $(HEADER)
+	@if [ -z "$(LIBINPUT_LIBS)" ]; then \
+		echo "Ошибка: libinput не найден. Установите: sudo apt install libinput-dev"; \
+		exit 1; \
+	fi
+	@if [ -z "$(LIBUDEV_LIBS)" ]; then \
+		echo "Ошибка: libudev не найден. Установите: sudo apt install libudev-dev"; \
+		exit 1; \
+	fi
+	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -c $(GESTURE_SOURCE) -o $(GESTURE_OBJECT)
+
 # Устанавливаем в систему
-install: $(TOOL_TARGET) $(LIB_TARGET) $(HEADER)
-	@echo "Установка ScrollEmulator..."
+install: $(TOOL_TARGET) $(LIB_TARGET) $(DAEMON_TARGET) $(HEADER) $(GESTURE_HEADER)
+	@echo "Установка ScrollEmulator и Gesture Scroll..."
 	sudo cp $(TOOL_TARGET) /usr/local/bin/
+	sudo cp $(DAEMON_TARGET) /usr/local/bin/
 	sudo cp $(LIB_TARGET) /usr/local/lib/
 	sudo cp $(HEADER) /usr/local/include/
+	sudo cp $(GESTURE_HEADER) /usr/local/include/
 	sudo ldconfig
 	@echo "✓ Установка завершена!"
-	@echo "Теперь можно использовать: scroll-tool --help"
+	@echo "Теперь можно использовать:"
+	@echo "  scroll-tool --help         # Консольный инструмент"
+	@echo "  gesture-scroll --help      # Демон жестов"
 
 # Удаляем из системы
 uninstall:
-	@echo "Удаление ScrollEmulator..."
+	@echo "Удаление ScrollEmulator и Gesture Scroll..."
 	sudo rm -f /usr/local/bin/$(TOOL_TARGET)
+	sudo rm -f /usr/local/bin/$(DAEMON_TARGET)
 	sudo rm -f /usr/local/lib/$(LIB_TARGET)
 	sudo rm -f /usr/local/include/$(HEADER)
+	sudo rm -f /usr/local/include/$(GESTURE_HEADER)
 	sudo ldconfig
 	@echo "✓ Удаление завершено"
 
 # Быстрые тесты
 test-simple: $(TOOL_TARGET)
-	@echo "=== Простой тест ==="
+	@echo "=== Простой тест scroll-tool ==="
 	./$(TOOL_TARGET) info
 
 test-verbose: $(TOOL_TARGET)
-	@echo "=== Подробный тест ==="
+	@echo "=== Подробный тест scroll-tool ==="
 	./$(TOOL_TARGET) -v info
 
 test-scroll: $(TOOL_TARGET)
@@ -76,33 +117,53 @@ test-smooth: $(TOOL_TARGET)
 	@read dummy
 	./$(TOOL_TARGET) -v -s 5 smooth-down 10 2000
 
+test-gesture: $(DAEMON_TARGET)
+	@echo "=== Тест gesture-scroll демона ==="
+	./$(DAEMON_TARGET) --test
+
+test-gesture-live: $(DAEMON_TARGET)
+	@echo "=== Живой тест gesture-scroll ==="
+	@echo "Будет запущен gesture-scroll с подробным выводом."
+	@echo "Используйте 3 пальца на тачпаде для тестирования."
+	@echo "Нажмите Ctrl+C для остановки."
+	@echo "Нажмите Enter для начала..."
+	@read dummy
+	./$(DAEMON_TARGET) -v
+
 # Полный тест
-test: $(TOOL_TARGET)
+test: $(TOOL_TARGET) $(DAEMON_TARGET)
+	@echo "=== Полное тестирование ==="
 	./$(TOOL_TARGET) test
+	@echo ""
+	./$(DAEMON_TARGET) --test
 
 # Примеры использования
-examples: $(TOOL_TARGET)
-	@echo "=== Примеры использования ScrollEmulator ==="
+examples: $(TOOL_TARGET) $(DAEMON_TARGET)
+	@echo "=== Примеры использования ScrollEmulator + Gesture Scroll ==="
 	@echo ""
-	@echo "1. Простые команды:"
+	@echo "1. SCROLL-TOOL - ручная прокрутка:"
 	@echo "   ./$(TOOL_TARGET) down 5                    # Скролл вниз на 5 шагов"
 	@echo "   ./$(TOOL_TARGET) up 3                      # Скролл вверх на 3 шага"
-	@echo "   ./$(TOOL_TARGET) page-down                 # Page Down"
-	@echo ""
-	@echo "2. Плавные скроллы:"
 	@echo "   ./$(TOOL_TARGET) smooth-down 10 2000       # Плавно вниз за 2 секунды"
-	@echo "   ./$(TOOL_TARGET) smooth-up 5 1000          # Плавно вверх за 1 секунду"
-	@echo ""
-	@echo "3. С настройками:"
 	@echo "   ./$(TOOL_TARGET) -d 100 down 3             # Медленный скролл"
-	@echo "   ./$(TOOL_TARGET) -s 10 smooth-down 5       # Очень плавный скролл"
 	@echo "   ./$(TOOL_TARGET) -v test                   # Полная демонстрация"
 	@echo ""
-	@echo "4. Специальные:"
-	@echo "   ./$(TOOL_TARGET) to-top                    # В начало документа"
-	@echo "   ./$(TOOL_TARGET) to-bottom                 # В конец документа"
+	@echo "2. GESTURE-SCROLL - жесты тачпада:"
+	@echo "   ./$(DAEMON_TARGET)                         # Запуск с настройками по умолчанию"
+	@echo "   ./$(DAEMON_TARGET) -v                      # С подробным выводом"
+	@echo "   ./$(DAEMON_TARGET) -d 30 -s 3              # Быстрый и плавный скролл"
+	@echo "   ./$(DAEMON_TARGET) --daemon -q             # Запуск в фоне"
+	@echo "   ./$(DAEMON_TARGET) --test                  # Проверка системы"
 	@echo ""
-	@echo "Запустите: ./$(TOOL_TARGET) --help для полной справки"
+	@echo "3. ЖЕСТЫ (для gesture-scroll):"
+	@echo "   3 пальца вверх    -> плавная прокрутка вверх"
+	@echo "   3 пальца вниз     -> плавная прокрутка вниз"
+	@echo "   3 пальца влево    -> горизонтальная прокрутка влево"
+	@echo "   3 пальца вправо   -> горизонтальная прокрутка вправо"
+	@echo ""
+	@echo "Справка:"
+	@echo "   ./$(TOOL_TARGET) --help                    # Справка по scroll-tool"
+	@echo "   ./$(DAEMON_TARGET) --help                  # Справка по gesture-scroll"
 
 # Создание пакета для распространения
 package: all
@@ -128,6 +189,20 @@ check:
 		echo "✓ X11: $$DISPLAY"; \
 	else \
 		echo "✗ X11 не обнаружен"; \
+	fi
+	@echo ""
+	@echo "Библиотеки:"
+	@if pkg-config --exists libinput 2>/dev/null; then \
+		echo "✓ libinput найден"; \
+		pkg-config --modversion libinput 2>/dev/null | sed 's/^/    Версия: /'; \
+	else \
+		echo "✗ libinput не найден (sudo apt install libinput-dev)"; \
+	fi
+	@if pkg-config --exists libudev 2>/dev/null; then \
+		echo "✓ libudev найден"; \
+		pkg-config --modversion libudev 2>/dev/null | sed 's/^/    Версия: /'; \
+	else \
+		echo "✗ libudev не найден (sudo apt install libudev-dev)"; \
 	fi
 	@echo ""
 	@echo "Утилиты:"
@@ -174,7 +249,7 @@ setup: check
 
 # Очистка
 clean:
-	rm -f $(TOOL_TARGET) $(LIB_TARGET) $(STATIC_LIB) $(OBJECT)
+	rm -f $(TOOL_TARGET) $(DAEMON_TARGET) $(LIB_TARGET) $(STATIC_LIB) $(OBJECT) $(GESTURE_OBJECT)
 	rm -f scroll-emulator.tar.gz
 	@echo "✓ Очистка выполнена"
 
