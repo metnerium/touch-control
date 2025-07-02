@@ -10,21 +10,26 @@ LIBUDEV_LIBS = $(shell pkg-config --libs libudev 2>/dev/null)
 # Файлы проекта
 HEADER = scroll_emulator.h
 GESTURE_HEADER = gesture_scroll_handler.h
+TOUCH_HEADER = touch_scroll_handler.h
 LIB_SOURCE = scroll_emulator.cpp
 GESTURE_SOURCE = gesture_scroll_handler.cpp
+TOUCH_SOURCE = touch_scroll_handler.cpp
 TOOL_SOURCE = scroll_tool.cpp
 DAEMON_SOURCE = gesture_scroll_daemon.cpp
+TOUCH_DAEMON_SOURCE = touch_scroll_daemon.cpp
 
 # Цели сборки
 LIB_TARGET = libscrollemulator.so
 STATIC_LIB = libscrollemulator.a
 TOOL_TARGET = scroll-tool
 DAEMON_TARGET = gesture-scroll
+TOUCH_DAEMON_TARGET = touch-scroll
 OBJECT = scroll_emulator.o
 GESTURE_OBJECT = gesture_scroll_handler.o
+TOUCH_OBJECT = touch_scroll_handler.o
 
 # Основные цели
-all: $(TOOL_TARGET) $(LIB_TARGET) $(DAEMON_TARGET)
+all: $(TOOL_TARGET) $(LIB_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET)
 
 # Консольное приложение
 $(TOOL_TARGET): $(TOOL_SOURCE) $(OBJECT)
@@ -43,6 +48,19 @@ $(DAEMON_TARGET): $(DAEMON_SOURCE) $(OBJECT) $(GESTURE_OBJECT)
 	fi
 	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -o $(DAEMON_TARGET) $(DAEMON_SOURCE) $(OBJECT) $(GESTURE_OBJECT) $(LIBINPUT_LIBS) $(LIBUDEV_LIBS)
 	@echo "✓ Gesture Scroll Daemon готов: ./$(DAEMON_TARGET)"
+
+# Touch Scroll Daemon (для сенсорных экранов)
+$(TOUCH_DAEMON_TARGET): $(TOUCH_DAEMON_SOURCE) $(OBJECT) $(TOUCH_OBJECT)
+	@if [ -z "$(LIBINPUT_LIBS)" ]; then \
+		echo "Ошибка: libinput не найден. Установите: sudo apt install libinput-dev"; \
+		exit 1; \
+	fi
+	@if [ -z "$(LIBUDEV_LIBS)" ]; then \
+		echo "Ошибка: libudev не найден. Установите: sudo apt install libudev-dev"; \
+		exit 1; \
+	fi
+	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -o $(TOUCH_DAEMON_TARGET) $(TOUCH_DAEMON_SOURCE) $(OBJECT) $(TOUCH_OBJECT) $(LIBINPUT_LIBS) $(LIBUDEV_LIBS)
+	@echo "✓ Touch Scroll Daemon готов: ./$(TOUCH_DAEMON_TARGET)"
 
 # Разделяемая библиотека
 $(LIB_TARGET): $(OBJECT)
@@ -69,28 +87,44 @@ $(GESTURE_OBJECT): $(GESTURE_SOURCE) $(GESTURE_HEADER) $(HEADER)
 	fi
 	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -c $(GESTURE_SOURCE) -o $(GESTURE_OBJECT)
 
+$(TOUCH_OBJECT): $(TOUCH_SOURCE) $(TOUCH_HEADER) $(HEADER)
+	@if [ -z "$(LIBINPUT_LIBS)" ]; then \
+		echo "Ошибка: libinput не найден. Установите: sudo apt install libinput-dev"; \
+		exit 1; \
+	fi
+	@if [ -z "$(LIBUDEV_LIBS)" ]; then \
+		echo "Ошибка: libudev не найден. Установите: sudo apt install libudev-dev"; \
+		exit 1; \
+	fi
+	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -c $(TOUCH_SOURCE) -o $(TOUCH_OBJECT)
+
 # Устанавливаем в систему
-install: $(TOOL_TARGET) $(LIB_TARGET) $(DAEMON_TARGET) $(HEADER) $(GESTURE_HEADER)
-	@echo "Установка ScrollEmulator и Gesture Scroll..."
+install: $(TOOL_TARGET) $(LIB_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET) $(HEADER) $(GESTURE_HEADER) $(TOUCH_HEADER)
+	@echo "Установка ScrollEmulator, Gesture Scroll и Touch Scroll..."
 	sudo cp $(TOOL_TARGET) /usr/local/bin/
 	sudo cp $(DAEMON_TARGET) /usr/local/bin/
+	sudo cp $(TOUCH_DAEMON_TARGET) /usr/local/bin/
 	sudo cp $(LIB_TARGET) /usr/local/lib/
 	sudo cp $(HEADER) /usr/local/include/
 	sudo cp $(GESTURE_HEADER) /usr/local/include/
+	sudo cp $(TOUCH_HEADER) /usr/local/include/
 	sudo ldconfig
 	@echo "✓ Установка завершена!"
 	@echo "Теперь можно использовать:"
 	@echo "  scroll-tool --help         # Консольный инструмент"
-	@echo "  gesture-scroll --help      # Демон жестов"
+	@echo "  gesture-scroll --help      # Демон жестов для тачпада"
+	@echo "  touch-scroll --help        # Демон жестов для сенсорного экрана"
 
 # Удаляем из системы
 uninstall:
-	@echo "Удаление ScrollEmulator и Gesture Scroll..."
+	@echo "Удаление ScrollEmulator, Gesture Scroll и Touch Scroll..."
 	sudo rm -f /usr/local/bin/$(TOOL_TARGET)
 	sudo rm -f /usr/local/bin/$(DAEMON_TARGET)
+	sudo rm -f /usr/local/bin/$(TOUCH_DAEMON_TARGET)
 	sudo rm -f /usr/local/lib/$(LIB_TARGET)
 	sudo rm -f /usr/local/include/$(HEADER)
 	sudo rm -f /usr/local/include/$(GESTURE_HEADER)
+	sudo rm -f /usr/local/include/$(TOUCH_HEADER)
 	sudo ldconfig
 	@echo "✓ Удаление завершено"
 
@@ -130,16 +164,31 @@ test-gesture-live: $(DAEMON_TARGET)
 	@read dummy
 	./$(DAEMON_TARGET) -v
 
+test-touch: $(TOUCH_DAEMON_TARGET)
+	@echo "=== Тест touch-scroll демона ==="
+	./$(TOUCH_DAEMON_TARGET) --test
+
+test-touch-live: $(TOUCH_DAEMON_TARGET)
+	@echo "=== Живой тест touch-scroll ==="
+	@echo "Будет запущен touch-scroll с подробным выводом."
+	@echo "Используйте 3 пальца на сенсорном экране для тестирования."
+	@echo "Нажмите Ctrl+C для остановки."
+	@echo "Нажмите Enter для начала..."
+	@read dummy
+	./$(TOUCH_DAEMON_TARGET) -v
+
 # Полный тест
-test: $(TOOL_TARGET) $(DAEMON_TARGET)
+test: $(TOOL_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET)
 	@echo "=== Полное тестирование ==="
 	./$(TOOL_TARGET) test
 	@echo ""
 	./$(DAEMON_TARGET) --test
+	@echo ""
+	./$(TOUCH_DAEMON_TARGET) --test
 
 # Примеры использования
-examples: $(TOOL_TARGET) $(DAEMON_TARGET)
-	@echo "=== Примеры использования ScrollEmulator + Gesture Scroll ==="
+examples: $(TOOL_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET)
+	@echo "=== Примеры использования ScrollEmulator + Gesture/Touch Scroll ==="
 	@echo ""
 	@echo "1. SCROLL-TOOL - ручная прокрутка:"
 	@echo "   ./$(TOOL_TARGET) down 5                    # Скролл вниз на 5 шагов"
@@ -151,19 +200,27 @@ examples: $(TOOL_TARGET) $(DAEMON_TARGET)
 	@echo "2. GESTURE-SCROLL - жесты тачпада:"
 	@echo "   ./$(DAEMON_TARGET)                         # Запуск с настройками по умолчанию"
 	@echo "   ./$(DAEMON_TARGET) -v                      # С подробным выводом"
-	@echo "   ./$(DAEMON_TARGET) -d 30 -s 3              # Быстрый и плавный скролл"
-	@echo "   ./$(DAEMON_TARGET) --daemon -q             # Запуск в фоне"
+	@echo "   ./$(DAEMON_TARGET) --delay 30 --steps 3    # Быстрый и плавный скролл"
+	@echo "   ./$(DAEMON_TARGET) --daemon                # Запуск в фоне"
 	@echo "   ./$(DAEMON_TARGET) --test                  # Проверка системы"
 	@echo ""
-	@echo "3. ЖЕСТЫ (для gesture-scroll):"
-	@echo "   3 пальца вверх    -> плавная прокрутка вверх"
-	@echo "   3 пальца вниз     -> плавная прокрутка вниз"
-	@echo "   3 пальца влево    -> горизонтальная прокрутка влево"
-	@echo "   3 пальца вправо   -> горизонтальная прокрутка вправо"
+	@echo "3. TOUCH-SCROLL - жесты сенсорного экрана (Plasma Mobile):"
+	@echo "   ./$(TOUCH_DAEMON_TARGET)                   # Запуск с настройками по умолчанию"
+	@echo "   ./$(TOUCH_DAEMON_TARGET) -v                # С подробным выводом"
+	@echo "   ./$(TOUCH_DAEMON_TARGET) --delay 20 --steps 5  # Быстрый и плавный скролл"
+	@echo "   ./$(TOUCH_DAEMON_TARGET) --daemon          # Запуск в фоне"
+	@echo "   ./$(TOUCH_DAEMON_TARGET) --test            # Проверка системы"
+	@echo ""
+	@echo "4. ЖЕСТЫ:"
+	@echo "   Тачпад (gesture-scroll):"
+	@echo "     3 пальца вверх/вниз/влево/вправо -> плавная прокрутка"
+	@echo "   Сенсорный экран (touch-scroll):"
+	@echo "     3 пальца + движение по экрану -> плавная прокрутка"
 	@echo ""
 	@echo "Справка:"
 	@echo "   ./$(TOOL_TARGET) --help                    # Справка по scroll-tool"
 	@echo "   ./$(DAEMON_TARGET) --help                  # Справка по gesture-scroll"
+	@echo "   ./$(TOUCH_DAEMON_TARGET) --help            # Справка по touch-scroll"
 
 # Создание пакета для распространения
 package: all
@@ -249,7 +306,7 @@ setup: check
 
 # Очистка
 clean:
-	rm -f $(TOOL_TARGET) $(DAEMON_TARGET) $(LIB_TARGET) $(STATIC_LIB) $(OBJECT) $(GESTURE_OBJECT)
+	rm -f $(TOOL_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET) $(LIB_TARGET) $(STATIC_LIB) $(OBJECT) $(GESTURE_OBJECT) $(TOUCH_OBJECT)
 	rm -f scroll-emulator.tar.gz
 	@echo "✓ Очистка выполнена"
 
@@ -258,8 +315,10 @@ help:
 	@echo "Доступные команды:"
 	@echo ""
 	@echo "Сборка:"
-	@echo "  make              - собрать консольное приложение и библиотеку"
+	@echo "  make              - собрать все приложения и библиотеки"
 	@echo "  make $(TOOL_TARGET)      - только консольное приложение"
+	@echo "  make $(DAEMON_TARGET)   - только gesture-scroll демон"
+	@echo "  make $(TOUCH_DAEMON_TARGET)     - только touch-scroll демон"
 	@echo "  make $(LIB_TARGET)   - только разделяемая библиотека"
 	@echo "  make $(STATIC_LIB)  - только статическая библиотека"
 	@echo ""
@@ -274,6 +333,10 @@ help:
 	@echo "  make test-simple  - быстрый тест"
 	@echo "  make test-scroll  - тест скролла"
 	@echo "  make test-smooth  - тест плавного скролла"
+	@echo "  make test-gesture - тест gesture-scroll"
+	@echo "  make test-gesture-live - живой тест тачпада"
+	@echo "  make test-touch   - тест touch-scroll"
+	@echo "  make test-touch-live - живой тест сенсорного экрана"
 	@echo ""
 	@echo "Документация:"
 	@echo "  make examples     - примеры использования"
