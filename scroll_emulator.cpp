@@ -79,17 +79,18 @@ void ScrollEmulator::cleanup() {
 }
 
 bool ScrollEmulator::tryX11XTest() {
-    // Проверяем что мы в X11 (не Wayland)
-    if (getenv("WAYLAND_DISPLAY")) {
-        return false;
-    }
+    return false;
+    // // Проверяем что мы в X11 (не Wayland)
+    // if (getenv("WAYLAND_DISPLAY")) {
+    //     return false;
+    // }
 
-    if (!getenv("DISPLAY")) {
-        return false;
-    }
+    // if (!getenv("DISPLAY")) {
+    //     return false;
+    // }
 
-    // Проверяем наличие X11 библиотек через простой тест
-    return system("command -v xset >/dev/null 2>&1") == 0;
+    // // Проверяем наличие X11 библиотек через простой тест
+    // return system("command -v xset >/dev/null 2>&1") == 0;
 }
 
 bool ScrollEmulator::tryUinputDaemon() {
