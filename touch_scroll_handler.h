@@ -23,6 +23,8 @@ struct TouchScrollState {
     std::unordered_map<int32_t, double> start_y;
     std::unordered_map<int32_t, double> current_x;
     std::unordered_map<int32_t, double> current_y;
+    std::unordered_map<int32_t, double> previous_x;
+    std::unordered_map<int32_t, double> previous_y;
     
     // Накопленные дельты для определения направления
     double total_delta_x = 0.0;
@@ -41,6 +43,8 @@ struct TouchScrollState {
         start_y.clear();
         current_x.clear();
         current_y.clear();
+        previous_x.clear();
+        previous_y.clear();
         total_delta_x = 0.0;
         total_delta_y = 0.0;
     }
@@ -172,6 +176,11 @@ private:
      * Вычисление интенсивности скролла на основе скорости жеста
      */
     int calculateScrollIntensity(double delta, double time_diff_ms);
+    
+    /**
+     * Вычисление среднего инкрементального движения всех активных пальцев
+     */
+    std::pair<double, double> getIncrementalAverageDelta();
     
     /**
      * Открытие libinput устройства

@@ -225,18 +225,30 @@ void TouchScrollHandler::handleTouchMotion(struct libinput_event_touch* touch) {
     double x = libinput_event_touch_get_x(touch);
     double y = libinput_event_touch_get_y(touch);
     
+    // Сохраняем предыдущую позицию
+    if (touch_state_.current_x.count(slot)) {
+        touch_state_.previous_x[slot] = touch_state_.current_x[slot];
+    } else {
+        touch_state_.previous_x[slot] = x; // При первом движении
+    }
+    
+    if (touch_state_.current_y.count(slot)) {
+        touch_state_.previous_y[slot] = touch_state_.current_y[slot];
+    } else {
+        touch_state_.previous_y[slot] = y; // При первом движении
+    }
+    
     // Обновляем текущую позицию
     touch_state_.current_x[slot] = x;
     touch_state_.current_y[slot] = y;
     
-    // Вычисляем среднее движение всех пальцев
-    std::pair<double, double> delta_pair = touch_state_.getAverageDelta();
-    double avg_delta_x = delta_pair.first;
-    double avg_delta_y = delta_pair.second;
+    // Вычисляем инкрементальную дельту движения для этого слота
+    double incremental_delta_x = x - touch_state_.previous_x[slot];
+    double incremental_delta_y = y - touch_state_.previous_y[slot];
     
-    // Накапливаем общее движение
-    touch_state_.total_delta_x = avg_delta_x;
-    touch_state_.total_delta_y = avg_delta_y;
+    // Накапливаем общее движение (ИСПРАВЛЕНИЕ: += вместо =)
+    touch_state_.total_delta_x += incremental_delta_x;
+    touch_state_.total_delta_y += incremental_delta_y;
     
     if (!touch_state_.active) {
         // Проверяем, достигли ли мы порога для начала жеста
@@ -259,13 +271,14 @@ void TouchScrollHandler::handleTouchMotion(struct libinput_event_touch* touch) {
     }
     
     if (touch_state_.active && shouldScroll()) {
-        // Для touch экранов используем небольшое движение для плавности
-        double motion_delta_x = (touch_state_.current_x.count(slot) && touch_state_.start_x.count(slot)) 
-                               ? touch_state_.current_x[slot] - touch_state_.start_x[slot] : 0.0;
-        double motion_delta_y = (touch_state_.current_y.count(slot) && touch_state_.start_y.count(slot))
-                               ? touch_state_.current_y[slot] - touch_state_.start_y[slot] : 0.0;
+        // ИСПРАВЛЕНИЕ: используем инкрементальные дельты для плавного скролла
+        // Вычисляем среднее инкрементальное движение всех активных пальцев
+        std::pair<double, double> avg_delta_pair = getIncrementalAverageDelta();
+        double avg_incremental_x = avg_delta_pair.first;
+        double avg_incremental_y = avg_delta_pair.second;
         
-        performSmoothScroll(motion_delta_x / 100.0, motion_delta_y / 100.0); // Масштабируем для touch
+        // Для touch экранов инвертируем Y-координату (touch обычно инвертирован относительно скролла)
+        performSmoothScroll(avg_incremental_x / 10.0, -avg_incremental_y / 10.0); // Инвертируем Y
         touch_state_.last_scroll_time = std::chrono::steady_clock::now();
     }
 }
@@ -287,6 +300,8 @@ void TouchScrollHandler::handleTouchUp(struct libinput_event_touch* touch) {
     touch_state_.start_y.erase(slot);
     touch_state_.current_x.erase(slot);
     touch_state_.current_y.erase(slot);
+    touch_state_.previous_x.erase(slot);
+    touch_state_.previous_y.erase(slot);
 }
 
 TouchDirection TouchScrollHandler::calculateDirection(double delta_x, double delta_y) {
@@ -370,6 +385,39 @@ int TouchScrollHandler::calculateScrollIntensity(double delta, double time_diff_
     
     // Ограничиваем диапазон для touch экранов
     return std::max(1, std::min(15, static_cast<int>(intensity)));
+}
+
+std::pair<double, double> TouchScrollHandler::getIncrementalAverageDelta() {
+    if (touch_state_.current_x.empty() || touch_state_.previous_x.empty()) {
+        return std::make_pair(0.0, 0.0);
+    }
+    
+    double total_delta_x = 0.0;
+    double total_delta_y = 0.0;
+    int count = 0;
+    
+    // Вычисляем инкрементальную дельту для каждого активного пальца
+    for (const auto& pair : touch_state_.current_x) {
+        int32_t slot = pair.first;
+        if (touch_state_.previous_x.count(slot) && 
+            touch_state_.current_y.count(slot) && 
+            touch_state_.previous_y.count(slot)) {
+            
+            double delta_x = touch_state_.current_x[slot] - touch_state_.previous_x[slot];
+            double delta_y = touch_state_.current_y[slot] - touch_state_.previous_y[slot];
+            
+            total_delta_x += delta_x;
+            total_delta_y += delta_y;
+            count++;
+        }
+    }
+    
+    if (count > 0) {
+        total_delta_x /= count;
+        total_delta_y /= count;
+    }
+    
+    return std::make_pair(total_delta_x, total_delta_y);
 }
 
 int TouchScrollHandler::openRestricted(const char* path, int flags, void* user_data) {
