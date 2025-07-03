@@ -1,0 +1,20 @@
+Варианты направлений для touch_scroll_handler.cpp (строка ~274):
+
+ТЕКУЩИЙ (вариант 1):
+performSmoothScroll(avg_incremental_x / 3.0, avg_incremental_y / 3.0);
+
+ЕСЛИ НЕ ПОДХОДИТ, ПОПРОБУЙТЕ:
+
+Вариант 2 - инвертировать Y:
+performSmoothScroll(avg_incremental_x / 3.0, -avg_incremental_y / 3.0);
+
+Вариант 3 - инвертировать X:
+performSmoothScroll(-avg_incremental_x / 3.0, avg_incremental_y / 3.0);
+
+Вариант 4 - инвертировать всё:
+performSmoothScroll(-avg_incremental_x / 3.0, -avg_incremental_y / 3.0);
+
+Вариант 5 - поменять X и Y местами:
+performSmoothScroll(avg_incremental_y / 3.0, avg_incremental_x / 3.0);
+
+Для еще большей чувствительности замените /3.0 на /2.0 или /1.5 

@@ -277,8 +277,8 @@ void TouchScrollHandler::handleTouchMotion(struct libinput_event_touch* touch) {
         double avg_incremental_x = avg_delta_pair.first;
         double avg_incremental_y = avg_delta_pair.second;
         
-        // Для touch экранов инвертируем Y-координату (touch обычно инвертирован относительно скролла)
-        performSmoothScroll(avg_incremental_x / 10.0, -avg_incremental_y / 10.0); // Инвертируем Y
+        // Увеличиваем чувствительность и убираем инверсию Y
+        performSmoothScroll(avg_incremental_x / 3.0, avg_incremental_y / 3.0); // Повышенная чувствительность
         touch_state_.last_scroll_time = std::chrono::steady_clock::now();
     }
 }
