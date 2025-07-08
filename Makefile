@@ -11,9 +11,11 @@ LIBUDEV_LIBS = $(shell pkg-config --libs libudev 2>/dev/null)
 HEADER = scroll_emulator.h
 GESTURE_HEADER = gesture_scroll_handler.h
 TOUCH_HEADER = touch_scroll_handler.h
+ORIENTATION_HEADER = orientation_detector.h
 LIB_SOURCE = scroll_emulator.cpp
 GESTURE_SOURCE = gesture_scroll_handler.cpp
 TOUCH_SOURCE = touch_scroll_handler.cpp
+ORIENTATION_SOURCE = orientation_detector.cpp
 TOOL_SOURCE = scroll_tool.cpp
 DAEMON_SOURCE = gesture_scroll_daemon.cpp
 TOUCH_DAEMON_SOURCE = touch_scroll_daemon.cpp
@@ -27,6 +29,7 @@ TOUCH_DAEMON_TARGET = touch-scroll
 OBJECT = scroll_emulator.o
 GESTURE_OBJECT = gesture_scroll_handler.o
 TOUCH_OBJECT = touch_scroll_handler.o
+ORIENTATION_OBJECT = orientation_detector.o
 
 # Основные цели
 all: $(TOOL_TARGET) $(LIB_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET)
@@ -50,7 +53,7 @@ $(DAEMON_TARGET): $(DAEMON_SOURCE) $(OBJECT) $(GESTURE_OBJECT)
 	@echo "✓ Gesture Scroll Daemon готов: ./$(DAEMON_TARGET)"
 
 # Touch Scroll Daemon (для сенсорных экранов)
-$(TOUCH_DAEMON_TARGET): $(TOUCH_DAEMON_SOURCE) $(OBJECT) $(TOUCH_OBJECT)
+$(TOUCH_DAEMON_TARGET): $(TOUCH_DAEMON_SOURCE) $(OBJECT) $(TOUCH_OBJECT) $(ORIENTATION_OBJECT)
 	@if [ -z "$(LIBINPUT_LIBS)" ]; then \
 		echo "Ошибка: libinput не найден. Установите: sudo apt install libinput-dev"; \
 		exit 1; \
@@ -59,7 +62,7 @@ $(TOUCH_DAEMON_TARGET): $(TOUCH_DAEMON_SOURCE) $(OBJECT) $(TOUCH_OBJECT)
 		echo "Ошибка: libudev не найден. Установите: sudo apt install libudev-dev"; \
 		exit 1; \
 	fi
-	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -o $(TOUCH_DAEMON_TARGET) $(TOUCH_DAEMON_SOURCE) $(OBJECT) $(TOUCH_OBJECT) $(LIBINPUT_LIBS) $(LIBUDEV_LIBS)
+	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -o $(TOUCH_DAEMON_TARGET) $(TOUCH_DAEMON_SOURCE) $(OBJECT) $(TOUCH_OBJECT) $(ORIENTATION_OBJECT) $(LIBINPUT_LIBS) $(LIBUDEV_LIBS) -pthread
 	@echo "✓ Touch Scroll Daemon готов: ./$(TOUCH_DAEMON_TARGET)"
 
 # Разделяемая библиотека
@@ -87,7 +90,7 @@ $(GESTURE_OBJECT): $(GESTURE_SOURCE) $(GESTURE_HEADER) $(HEADER)
 	fi
 	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -c $(GESTURE_SOURCE) -o $(GESTURE_OBJECT)
 
-$(TOUCH_OBJECT): $(TOUCH_SOURCE) $(TOUCH_HEADER) $(HEADER)
+$(TOUCH_OBJECT): $(TOUCH_SOURCE) $(TOUCH_HEADER) $(HEADER) $(ORIENTATION_HEADER)
 	@if [ -z "$(LIBINPUT_LIBS)" ]; then \
 		echo "Ошибка: libinput не найден. Установите: sudo apt install libinput-dev"; \
 		exit 1; \
@@ -97,6 +100,9 @@ $(TOUCH_OBJECT): $(TOUCH_SOURCE) $(TOUCH_HEADER) $(HEADER)
 		exit 1; \
 	fi
 	$(CXX) $(CXXFLAGS) $(LIBINPUT_CFLAGS) $(LIBUDEV_CFLAGS) -c $(TOUCH_SOURCE) -o $(TOUCH_OBJECT)
+
+$(ORIENTATION_OBJECT): $(ORIENTATION_SOURCE) $(ORIENTATION_HEADER)
+	$(CXX) $(CXXFLAGS) -c $(ORIENTATION_SOURCE) -o $(ORIENTATION_OBJECT) -pthread
 
 # Устанавливаем в систему
 install: $(TOOL_TARGET) $(LIB_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET) $(HEADER) $(GESTURE_HEADER) $(TOUCH_HEADER)
@@ -306,7 +312,7 @@ setup: check
 
 # Очистка
 clean:
-	rm -f $(TOOL_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET) $(LIB_TARGET) $(STATIC_LIB) $(OBJECT) $(GESTURE_OBJECT) $(TOUCH_OBJECT)
+	rm -f $(TOOL_TARGET) $(DAEMON_TARGET) $(TOUCH_DAEMON_TARGET) $(LIB_TARGET) $(STATIC_LIB) $(OBJECT) $(GESTURE_OBJECT) $(TOUCH_OBJECT) $(ORIENTATION_OBJECT)
 	rm -f scroll-emulator.tar.gz
 	@echo "✓ Очистка выполнена"
 

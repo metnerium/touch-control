@@ -10,8 +10,10 @@
 #include <cerrno>   // для errno
 
 TouchScrollHandler::TouchScrollHandler() 
-    : li_(nullptr), udev_(nullptr), fd_(-1), running_(false), verbose_(false) {
+    : li_(nullptr), udev_(nullptr), fd_(-1), running_(false), verbose_(false), 
+      current_orientation_(ScreenOrientation::UNKNOWN) {
     scroll_emulator_.reset(new ScrollEmulator());  // Используем reset вместо make_unique для C++11
+    orientation_detector_.reset(new OrientationDetector());
 }
 
 TouchScrollHandler::~TouchScrollHandler() {
@@ -83,11 +85,46 @@ bool TouchScrollHandler::initialize() {
         std::cout << "✓ libinput инициализирован для сенсорных экранов" << std::endl;
     }
     
+    // Инициализируем детектор ориентации
+    if (orientation_detector_) {
+        orientation_detector_->setVerbose(verbose_);
+        
+        if (orientation_detector_->initialize()) {
+            current_orientation_ = orientation_detector_->getCurrentOrientation();
+            
+            // Устанавливаем callback для отслеживания изменений ориентации
+            orientation_detector_->setOrientationCallback(
+                [this](ScreenOrientation old_orientation, ScreenOrientation new_orientation) {
+                    onOrientationChanged(old_orientation, new_orientation);
+                });
+            
+            // Запускаем мониторинг изменений ориентации
+            orientation_detector_->startMonitoring();
+            
+            if (verbose_) {
+                std::cout << "✓ Детектор ориентации инициализирован: " 
+                          << OrientationDetector::orientationToString(current_orientation_) << std::endl;
+            }
+        } else {
+            if (verbose_) {
+                std::cout << "⚠ Детектор ориентации не удалось инициализировать, используется режим по умолчанию" << std::endl;
+            }
+            current_orientation_ = ScreenOrientation::LANDSCAPE_0;
+        }
+    }
+    
     return true;
 }
 
 void TouchScrollHandler::cleanup() {
     running_ = false;
+    
+    // Очистка детектора ориентации
+    if (orientation_detector_) {
+        orientation_detector_->stopMonitoring();
+        orientation_detector_->cleanup();
+        orientation_detector_.reset();
+    }
     
     if (li_) {
         libinput_unref(li_);
@@ -120,7 +157,7 @@ void TouchScrollHandler::run() {
     
     if (verbose_) {
         std::cout << "Начинаем обработку touch жестов..." << std::endl;
-        std::cout << "Используйте 3 пальца на сенсорном экране для скролла (Ctrl+C для выхода)" << std::endl;
+        std::cout << "Используйте 1 палец на сенсорном экране для скролла (Ctrl+C для выхода)" << std::endl;
     }
     
     struct pollfd fds;
@@ -210,14 +247,14 @@ void TouchScrollHandler::handleTouchDown(struct libinput_event_touch* touch) {
         touch_state_.total_delta_y = 0.0;
     }
     
-    if (verbose_ && touch_state_.current_fingers == 3) {
-        std::cout << "Началось касание 3 пальцами на экране" << std::endl;
+    if (verbose_ && touch_state_.current_fingers == 1) {
+        std::cout << "Началось касание 1 пальцем на экране" << std::endl;
     }
 }
 
 void TouchScrollHandler::handleTouchMotion(struct libinput_event_touch* touch) {
-    // Обрабатываем только жесты с 3 пальцами
-    if (touch_state_.current_fingers != 3) {
+    // Обрабатываем только жесты с 1 пальцем
+    if (touch_state_.current_fingers != 1) {
         return;
     }
     
@@ -225,18 +262,30 @@ void TouchScrollHandler::handleTouchMotion(struct libinput_event_touch* touch) {
     double x = libinput_event_touch_get_x(touch);
     double y = libinput_event_touch_get_y(touch);
     
+    // Сохраняем предыдущую позицию
+    if (touch_state_.current_x.count(slot)) {
+        touch_state_.previous_x[slot] = touch_state_.current_x[slot];
+    } else {
+        touch_state_.previous_x[slot] = x; // При первом движении
+    }
+    
+    if (touch_state_.current_y.count(slot)) {
+        touch_state_.previous_y[slot] = touch_state_.current_y[slot];
+    } else {
+        touch_state_.previous_y[slot] = y; // При первом движении
+    }
+    
     // Обновляем текущую позицию
     touch_state_.current_x[slot] = x;
     touch_state_.current_y[slot] = y;
     
-    // Вычисляем среднее движение всех пальцев
-    std::pair<double, double> delta_pair = touch_state_.getAverageDelta();
-    double avg_delta_x = delta_pair.first;
-    double avg_delta_y = delta_pair.second;
+    // Вычисляем инкрементальную дельту движения для этого слота
+    double incremental_delta_x = x - touch_state_.previous_x[slot];
+    double incremental_delta_y = y - touch_state_.previous_y[slot];
     
-    // Накапливаем общее движение
-    touch_state_.total_delta_x = avg_delta_x;
-    touch_state_.total_delta_y = avg_delta_y;
+    // Накапливаем общее движение (ИСПРАВЛЕНИЕ: += вместо =)
+    touch_state_.total_delta_x += incremental_delta_x;
+    touch_state_.total_delta_y += incremental_delta_y;
     
     if (!touch_state_.active) {
         // Проверяем, достигли ли мы порога для начала жеста
@@ -259,13 +308,17 @@ void TouchScrollHandler::handleTouchMotion(struct libinput_event_touch* touch) {
     }
     
     if (touch_state_.active && shouldScroll()) {
-        // Для touch экранов используем небольшое движение для плавности
-        double motion_delta_x = (touch_state_.current_x.count(slot) && touch_state_.start_x.count(slot)) 
-                               ? touch_state_.current_x[slot] - touch_state_.start_x[slot] : 0.0;
-        double motion_delta_y = (touch_state_.current_y.count(slot) && touch_state_.start_y.count(slot))
-                               ? touch_state_.current_y[slot] - touch_state_.start_y[slot] : 0.0;
+        // ИСПРАВЛЕНИЕ: используем инкрементальные дельты для плавного скролла
+        // Вычисляем среднее инкрементальное движение всех активных пальцев
+        std::pair<double, double> avg_delta_pair = getIncrementalAverageDelta();
+        double avg_incremental_x = avg_delta_pair.first;
+        double avg_incremental_y = avg_delta_pair.second;
         
-        performSmoothScroll(motion_delta_x / 100.0, motion_delta_y / 100.0); // Масштабируем для touch
+        // Применяем трансформацию координат в зависимости от ориентации
+        transformTouchCoordinates(avg_incremental_x, avg_incremental_y);
+        
+        // Увеличиваем чувствительность
+        performSmoothScroll(avg_incremental_x / 3.0, avg_incremental_y / 3.0); // Повышенная чувствительность
         touch_state_.last_scroll_time = std::chrono::steady_clock::now();
     }
 }
@@ -287,6 +340,8 @@ void TouchScrollHandler::handleTouchUp(struct libinput_event_touch* touch) {
     touch_state_.start_y.erase(slot);
     touch_state_.current_x.erase(slot);
     touch_state_.current_y.erase(slot);
+    touch_state_.previous_x.erase(slot);
+    touch_state_.previous_y.erase(slot);
 }
 
 TouchDirection TouchScrollHandler::calculateDirection(double delta_x, double delta_y) {
@@ -372,6 +427,39 @@ int TouchScrollHandler::calculateScrollIntensity(double delta, double time_diff_
     return std::max(1, std::min(15, static_cast<int>(intensity)));
 }
 
+std::pair<double, double> TouchScrollHandler::getIncrementalAverageDelta() {
+    if (touch_state_.current_x.empty() || touch_state_.previous_x.empty()) {
+        return std::make_pair(0.0, 0.0);
+    }
+    
+    double total_delta_x = 0.0;
+    double total_delta_y = 0.0;
+    int count = 0;
+    
+    // Вычисляем инкрементальную дельту для каждого активного пальца
+    for (const auto& pair : touch_state_.current_x) {
+        int32_t slot = pair.first;
+        if (touch_state_.previous_x.count(slot) && 
+            touch_state_.current_y.count(slot) && 
+            touch_state_.previous_y.count(slot)) {
+            
+            double delta_x = touch_state_.current_x[slot] - touch_state_.previous_x[slot];
+            double delta_y = touch_state_.current_y[slot] - touch_state_.previous_y[slot];
+            
+            total_delta_x += delta_x;
+            total_delta_y += delta_y;
+            count++;
+        }
+    }
+    
+    if (count > 0) {
+        total_delta_x /= count;
+        total_delta_y /= count;
+    }
+    
+    return std::make_pair(total_delta_x, total_delta_y);
+}
+
 int TouchScrollHandler::openRestricted(const char* path, int flags, void* user_data) {
     int fd = open(path, flags);
     if (fd < 0) {
@@ -386,4 +474,30 @@ int TouchScrollHandler::openRestricted(const char* path, int flags, void* user_d
 void TouchScrollHandler::closeRestricted(int fd, void* user_data) {
     (void)user_data;  // Подавляем предупреждение о неиспользованном параметре
     close(fd);
+}
+
+void TouchScrollHandler::onOrientationChanged(ScreenOrientation old_orientation, ScreenOrientation new_orientation) {
+    current_orientation_ = new_orientation;
+    
+    if (verbose_) {
+        std::cout << "🔄 Ориентация экрана изменена с " 
+                  << OrientationDetector::orientationToString(old_orientation) 
+                  << " на " << OrientationDetector::orientationToString(new_orientation) << std::endl;
+    }
+    
+    // Сбрасываем текущий жест при изменении ориентации
+    touch_state_.reset();
+}
+
+void TouchScrollHandler::transformTouchCoordinates(double& delta_x, double& delta_y) {
+    // Применяем трансформацию координат в зависимости от ориентации
+    OrientationDetector::transformCoordinates(current_orientation_, delta_x, delta_y);
+    
+    if (verbose_ && (std::abs(delta_x) > 0.1 || std::abs(delta_y) > 0.1)) {
+        int degrees = OrientationDetector::orientationToDegrees(current_orientation_);
+        if (degrees >= 0) {
+            std::cout << "📱 Трансформация координат для " << degrees << "°: "
+                      << "Δx=" << delta_x << ", Δy=" << delta_y << std::endl;
+        }
+    }
 } 

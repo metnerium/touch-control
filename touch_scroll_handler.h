@@ -7,6 +7,7 @@
 #include <chrono>
 #include <unordered_map>
 #include "scroll_emulator.h"
+#include "orientation_detector.h"
 
 /**
  * Состояние touch жеста для отслеживания 3-пальцевого скролла на сенсорном экране
@@ -23,6 +24,8 @@ struct TouchScrollState {
     std::unordered_map<int32_t, double> start_y;
     std::unordered_map<int32_t, double> current_x;
     std::unordered_map<int32_t, double> current_y;
+    std::unordered_map<int32_t, double> previous_x;
+    std::unordered_map<int32_t, double> previous_y;
     
     // Накопленные дельты для определения направления
     double total_delta_x = 0.0;
@@ -41,6 +44,8 @@ struct TouchScrollState {
         start_y.clear();
         current_x.clear();
         current_y.clear();
+        previous_x.clear();
+        previous_y.clear();
         total_delta_x = 0.0;
         total_delta_y = 0.0;
     }
@@ -133,6 +138,10 @@ private:
     std::unique_ptr<ScrollEmulator> scroll_emulator_;
     TouchScrollState touch_state_;
     
+    // Система определения ориентации
+    std::unique_ptr<OrientationDetector> orientation_detector_;
+    ScreenOrientation current_orientation_;
+    
     /**
      * Обработка событий libinput
      */
@@ -172,6 +181,21 @@ private:
      * Вычисление интенсивности скролла на основе скорости жеста
      */
     int calculateScrollIntensity(double delta, double time_diff_ms);
+    
+    /**
+     * Вычисление среднего инкрементального движения всех активных пальцев
+     */
+    std::pair<double, double> getIncrementalAverageDelta();
+    
+    /**
+     * Callback при изменении ориентации экрана
+     */
+    void onOrientationChanged(ScreenOrientation old_orientation, ScreenOrientation new_orientation);
+    
+    /**
+     * Применение трансформации координат в зависимости от ориентации
+     */
+    void transformTouchCoordinates(double& delta_x, double& delta_y);
     
     /**
      * Открытие libinput устройства

@@ -23,7 +23,7 @@ void signalHandler(int signal) {
 void printUsage(const char* program_name) {
     std::cout << "Использование: " << program_name << " [опции]" << std::endl;
     std::cout << std::endl;
-    std::cout << "Touch Scroll Daemon - плавная прокрутка 3 пальцами на сенсорном экране" << std::endl;
+    std::cout << "Touch Scroll Daemon - плавная прокрутка 1 пальцем на сенсорном экране" << std::endl;
     std::cout << "Адаптирован для Plasma Mobile и других touch-устройств" << std::endl;
     std::cout << std::endl;
     std::cout << "Опции:" << std::endl;
@@ -166,7 +166,7 @@ int main(int argc, char* argv[]) {
     
     if (!daemon_mode) {
         std::cout << "=== Touch Scroll Daemon ===" << std::endl;
-        std::cout << "Плавная прокрутка 3 пальцами на сенсорном экране" << std::endl;
+        std::cout << "Плавная прокрутка 1 пальцем на сенсорном экране" << std::endl;
         std::cout << "Адаптирован для Plasma Mobile" << std::endl;
         std::cout << "Настройки: задержка=" << delay_ms << "мс, шаги=" << steps 
                   << ", ускорение=" << acceleration << std::endl;
@@ -199,7 +199,7 @@ int main(int argc, char* argv[]) {
     
     if (!daemon_mode) {
         std::cout << "Обработчик touch жестов готов!" << std::endl;
-        std::cout << "Используйте 3 пальца на сенсорном экране для прокрутки" << std::endl;
+        std::cout << "Используйте 1 палец на сенсорном экране для прокрутки" << std::endl;
         std::cout << "Нажмите Ctrl+C для выхода" << std::endl;
         std::cout << std::endl;
     }
